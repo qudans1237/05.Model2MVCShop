@@ -1,0 +1,422 @@
+05.Model2MVCShop(AOP,Transaction) 분석
+=======================================================
+lib 
+
+com.springsource.org.aspectj.weaver-1.6.8.RELEASE
+
+commons-dbcp-1.4
+
+commons-pool-1.6
+
+hamcrest-core-1.3
+
+junit-4.13.2
+
+log4j-1.2.17
+
+mybatis-3.4.6
+
+mybatis-spring-1.3.1
+
+ojdbc6
+
+slf4j-log4j12-1.7.25
+
+springframework 
+
+==========================================================
+context-aspect.xml
+---------------------------------
+<beans xmlns="http://www.springframework.org/schema/beans"
+		xmlns:aop="http://www.springframework.org/schema/aop"
+		xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+		xsi:schemaLocation=
+				"http://www.springframework.org/schema/beans 
+				 http://www.springframework.org/schema/beans/spring-beans.xsd
+				 http://www.springframework.org/schema/aop 
+				 http://www.springframework.org/schema/aop/spring-aop.xsd">
+스프링프레임워크 사용 하기 위한 소스
+--------------------------------
+
+<bean 	id="logAspect"		class="com.model2.mvc.common.aspect.LogAspectJ" />
+1. Adivce : com.model2.mvc.common.aspect.LogAspectJ 
+2. point-cut : pointcut="execution(* com.model2.mvc.service..*Impl.*(..) )"	method="invoke"
+
+service 하위 포함 모든 Impl에 있는 모든 매서드(0개 이상) join-point 룰 적용해서 weaving을 한다.
+
+==========================================================
+com.model2.mvc.common.aspect
+:: XML 에 선언적으로 aspect 의 적용   
+
+Around Advice = before/after 모두 처리 
+public Object invoke(ProceedingJoinPoint joinPoint) throws Throwable
+
+System.out.println("");
+		System.out.println("[Around before] 타겍객체.메서드 :"+
+													joinPoint.getTarget().getClass().getName() +"."+
+													joinPoint.getSignature().getName());
+		if(joinPoint.getArgs().length !=0){
+			System.out.println("[Around before]method에 전달되는 인자 : "+ joinPoint.getArgs()[0]);
+		}
+		//==> 타겟 객체의 Method 를 호출 하는 부분 
+		Object obj = joinPoint.proceed();
+
+		System.out.println("[Around after] 타겟 객체return value  : "+obj);
+		System.out.println("");
+		
+		return obj;
+
+==========================================================
+context-common.xml
+<beans xmlns="http://www.springframework.org/schema/beans"
+		xmlns:context="http://www.springframework.org/schema/context"
+		xmlns:util="http://www.springframework.org/schema/util"
+
+		xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+		xsi:schemaLocation=
+				"http://www.springframework.org/schema/beans 
+				http://www.springframework.org/schema/beans/spring-beans.xsd
+				 http://www.springframework.org/schema/context 
+				 http://www.springframework.org/schema/context/spring-context.xsd
+				http://www.springframework.org/schema/util 
+				http://www.springframework.org/schema/util/spring-util.xsd">
+
+스프링프레임워크 사용 하기 위한 소스
+
+<context:component-scan base-package="com.model2.mvc.service">
+		<context:include-filter type="annotation"	expression="org.springframework.stereotype.Service" />
+		<context:include-filter type="annotation"	expression="org.springframework.stereotype.Repository" />
+		<context:exclude-filter type="annotation" 	expression="org.springframework.stereotype.Controller" />
+	</context:component-scan>
+
+service 패키지에 있는 어노테이션을 스캔
+
+include : @Service @Repository 사용한다 직관적
+exclude : @Controller 사용 안한다 직관적 	
+
+==========================================================
+context-mybatis.xml
+
+<beans xmlns="http://www.springframework.org/schema/beans"
+		xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+		xsi:schemaLocation=
+				"http://www.springframework.org/schema/beans 
+				 http://www.springframework.org/schema/beans/spring-beans.xsd">
+스프링프레임워크 사용 하기 위한 소스
+
+	<!-- ㅇ SqlSession 인스턴스를 생성하는 SqlSessionFactory 생성
+	      ㅇ Factory Pattern  적용 :: Spring 의 FactoryBean interface 구현 -->
+	<bean 	id="sqlSessionFactoryBean" 
+					class="org.mybatis.spring.SqlSessionFactoryBean" >
+		<property name="dataSource" ref="dataSource"/>
+		<property name="configLocation" value="classpath:sql/mybatis-config.xml"/>
+	</bean>
+	
+	<!--  ㅇ SqlSessionTeampate 인스턴스생성
+		   ㅇ Spring 과 연동시 사용하는 핵심 SqlSession 구현체
+		   ㅇ Spring 에서 제공한는 Transaction 처리에 구조화된 SqlSession 구현체	 -->
+	<bean		id="sqlSessionTemplate"		
+					class="org.mybatis.spring.SqlSessionTemplate" >		
+		<constructor-arg ref="sqlSessionFactoryBean"/>
+	</bean>
+
+
+==========================================================
+context-transaction.xml
+
+<!-- Transaction Advice 생성 
+			:: method : transaction 적용 Method
+			:: propagation : transaction 전파규칙(default : REQUIRED)
+			:: read-only : 트랜잭션이 읽기만가능 (선택)-->
+	<tx:advice id="txAdvice" transaction-manager="transactionManager">
+		<tx:attributes>
+			<!-- get 으로 시작된는 Method에 적용 transaction 규칙 -->				
+			<tx:method 	name="get*" 			propagation="REQUIRED"	read-only="true" />
+			<!-- add 으로 시작된는 Method에 적용 transaction 규칙 -->		
+			<tx:method	name="add*"	 		propagation="REQUIRED"/>
+			<tx:method	name="update*"	propagation="REQUIRED"/>
+			<!--모든 Method에 적용 transaction 규칙 -->		
+			<!-- <tx:method	name="*"	 />-->	
+		</tx:attributes>
+	</tx:advice>
+
+	<!-- AOP : pointcut / advisor 설정 -->
+	<aop:config>
+		<aop:pointcut 	id="requiredTx"
+									expression="execution(* com.model2.mvc.service..*ServiceImpl.*(..) )" />
+		<aop:advisor 	advice-ref="txAdvice"  pointcut-ref="requiredTx"  />
+	</aop:config>
+
+트랜젝션은 스프링 프레임워크에서 ServiceImpl 에서 sql commit/rollback 을 지원해주는 것
+99퍼센트 REQUIRED 사용 디폴트값으로 지정됨 
+get은 commit이 필요없으므로 read-only="true"
+
+==========================================================
+UserServiceTest.java
+
+//비지니스로직에서 테스트를 하기 위한 자바파일
+package com.model2.mvc.service.user.test;
+
+import java.util.List; // UserList에서 갖고온 data를 담기위함
+import java.util.Map; // search 와 같이 검색을 하기위함
+
+import org.junit.Assert; // Assert.assertEquals("test 예상 결과",user.getUserId()//실제 프로그램 작동후 나온 결과);
+import org.junit.Test; //@Test 테스트 어노테이션
+import org.junit.runner.RunWith; //테스트 결과화면 콘솔
+import org.springframework.beans.factory.annotation.Autowired; //와이어링 하기위한 어노테이션
+import org.springframework.beans.factory.annotation.Qualifier; // Autowired 어노테이션 하위 어노테이션 ("와이어링 할 대상")
+import org.springframework.test.context.ContextConfiguration; //springframework 에서 메타데이터들을 와이어링 하기위함
+import org.springframework.test.context.junit4.SpringJUnit4ClassRunner; //@RunWith : Meta-data 를 통한 wiring(생성,DI) 할 객체 구현체 지정
+
+import com.model2.mvc.common.Search; //검색 부분
+import com.model2.mvc.service.domain.User; // 유저 도메인데이터
+import com.model2.mvc.service.user.UserService; //유저 C.R.U.D 하기위한 interface
+
+
+/*
+ *	FileName :  UserServiceTest.java
+ * ㅇ JUnit4 (Test Framework) 과 Spring Framework 통합 Test( Unit Test)
+ * ㅇ Spring 은 JUnit 4를 위한 지원 클래스를 통해 스프링 기반 통합 테스트 코드를 작성 할 수 있다.
+ * ㅇ @RunWith : Meta-data 를 통한 wiring(생성,DI) 할 객체 구현체 지정
+ * ㅇ @ContextConfiguration : Meta-data location 지정
+ * ㅇ @Test : 테스트 실행 소스 지정
+ */
+@RunWith(SpringJUnit4ClassRunner.class)
+
+//==> Meta-Data 를 다양하게 Wiring 하자...
+//@ContextConfiguration(locations = { "classpath:config/context-*.xml" }) // 아스타 처리로 config/*.xml 이렇게 사용할 수도있다.
+
+@ContextConfiguration	(locations = {	"classpath:config/context-common.xml",
+					"classpath:config/context-aspect.xml",
+					"classpath:config/context-mybatis.xml",
+					"classpath:config/context-transaction.xml" }) // 가독성을 높이기 위함 난 가독성이 좋다
+
+
+//@ContextConfiguration(locations = { "classpath:config/context-common.xml" })
+public class UserServiceTest {
+
+	//==>@RunWith,@ContextConfiguration 이용 Wiring, Test 할 instance DI
+	@Autowired
+	@Qualifier("userServiceImpl")
+	private UserService userService;
+
+	@Test
+	public void testAddUser() throws Exception {
+		
+		User user = new User();
+		user.setUserId("testUserId");
+		user.setUserName("testUserName");
+		user.setPassword("testPasswd");
+		user.setSsn("1111112222222");
+		user.setPhone("111-2222-3333");
+		user.setAddr("경기도");
+		user.setEmail("test@test.com");
+		
+		userService.addUser(user);
+		
+		user = userService.getUser("testUserId");
+
+		//==> console 확인
+		//System.out.println(user);
+		
+		//==> API 확인
+		Assert.assertEquals("testUserId", user.getUserId());
+		Assert.assertEquals("testUserName", user.getUserName());
+		Assert.assertEquals("testPasswd", user.getPassword());
+		Assert.assertEquals("111-2222-3333", user.getPhone());
+		Assert.assertEquals("경기도", user.getAddr());
+		Assert.assertEquals("test@test.com", user.getEmail());
+	}
+	
+	//@Test
+	public void testGetUser() throws Exception {
+		
+		User user = new User();
+		//==> 필요하다면...
+//			user.setUserId("testUserId");
+//			user.setUserName("testUserName");
+//			user.setPassword("testPasswd");
+//			user.setSsn("1111112222222");
+//			user.setPhone("111-2222-3333");
+//			user.setAddr("경기도");
+//			user.setEmail("test@test.com");
+		
+		user = userService.getUser("testUserId");
+
+		//==> console 확인
+		//System.out.println(user);
+		
+		//==> API 확인
+		Assert.assertEquals("testUserId", user.getUserId());
+		Assert.assertEquals("testUserName", user.getUserName());
+		Assert.assertEquals("testPasswd", user.getPassword());
+		Assert.assertEquals("111-2222-3333", user.getPhone());
+		Assert.assertEquals("경기도", user.getAddr());
+		Assert.assertEquals("test@test.com", user.getEmail());
+
+		Assert.assertNotNull(userService.getUser("user02"));
+		Assert.assertNotNull(userService.getUser("user05"));
+	}
+	
+	//@Test
+	 public void testUpdateUser() throws Exception{
+		 
+		User user = userService.getUser("testUserId");
+		Assert.assertNotNull(user);
+		
+		Assert.assertEquals("testUserName", user.getUserName());
+		Assert.assertEquals("111-2222-3333", user.getPhone());
+		Assert.assertEquals("경기도", user.getAddr());
+		Assert.assertEquals("test@test.com", user.getEmail());
+
+		user.setUserName("change");
+		user.setPhone("777-7777-7777");
+		user.setAddr("change");
+		user.setEmail("change@change.com");
+		
+		userService.updateUser(user);
+		
+		user = userService.getUser("testUserId");
+		Assert.assertNotNull(user);
+		
+		//==> console 확인
+		//System.out.println(user);
+			
+		//==> API 확인
+		Assert.assertEquals("change", user.getUserName());
+		Assert.assertEquals("777-7777-7777", user.getPhone());
+		Assert.assertEquals("change", user.getAddr());
+		Assert.assertEquals("change@change.com", user.getEmail());
+	 }
+	 
+	//@Test
+	public void testCheckDuplication() throws Exception{
+
+		//==> 필요하다면...
+//			User user = new User();
+//			user.setUserId("testUserId");
+//			user.setUserName("testUserName");
+//			user.setPassword("testPasswd");
+//			user.setSsn("1111112222222");
+//			user.setPhone("111-2222-3333");
+//			user.setAddr("경기도");
+//			user.setEmail("test@test.com");
+//			
+//			userService.addUser(user);
+		
+		//==> console 확인
+		//System.out.println(userService.checkDuplication("testUserId"));
+		//System.out.println(userService.checkDuplication("testUserId"+System.currentTimeMillis()) );
+	 	
+		//==> API 확인
+		Assert.assertFalse( userService.checkDuplication("testUserId") );
+	 	Assert.assertTrue( userService.checkDuplication("testUserId"+System.currentTimeMillis()) );
+		 	
+	}
+	
+	 //==>  주석을 풀고 실행하면....
+	 //@Test
+	 public void testGetUserListAll() throws Exception{
+		 
+	 	Search search = new Search();
+	 	search.setCurrentPage(1);
+	 	search.setPageSize(3);
+	 	Map<String,Object> map = userService.getUserList(search);
+	 	
+	 	List<Object> list = (List<Object>)map.get("list");
+	 	Assert.assertEquals(3, list.size());
+	 	
+		//==> console 확인
+	 	//System.out.println(list);
+	 	
+	 	Integer totalCount = (Integer)map.get("totalCount");
+	 	System.out.println(totalCount);
+	 	
+	 	System.out.println("=======================================");
+	 	
+	 	search.setCurrentPage(1);
+	 	search.setPageSize(3);
+	 	search.setSearchCondition("0");
+	 	search.setSearchKeyword("");
+	 	map = userService.getUserList(search);
+	 	
+	 	list = (List<Object>)map.get("list");
+	 	Assert.assertEquals(3, list.size());
+	 	
+	 	//==> console 확인
+	 	//System.out.println(list);
+	 	
+	 	totalCount = (Integer)map.get("totalCount");
+	 	System.out.println(totalCount);
+	 }
+	 
+	 //@Test
+	 public void testGetUserListByUserId() throws Exception{
+		 
+	 	Search search = new Search();
+	 	search.setCurrentPage(1);
+	 	search.setPageSize(3);
+	 	search.setSearchCondition("0");
+	 	search.setSearchKeyword("admin");
+	 	Map<String,Object> map = userService.getUserList(search);
+	 	
+	 	List<Object> list = (List<Object>)map.get("list");
+	 	Assert.assertEquals(1, list.size());
+	 	
+		//==> console 확인
+	 	//System.out.println(list);
+	 	
+	 	Integer totalCount = (Integer)map.get("totalCount");
+	 	System.out.println(totalCount);
+	 	
+	 	System.out.println("=======================================");
+	 	
+	 	search.setSearchCondition("0");
+	 	search.setSearchKeyword(""+System.currentTimeMillis());
+	 	map = userService.getUserList(search);
+	 	
+	 	list = (List<Object>)map.get("list");
+	 	Assert.assertEquals(0, list.size());
+	 	
+		//==> console 확인
+	 	//System.out.println(list);
+	 	
+	 	totalCount = (Integer)map.get("totalCount");
+	 	System.out.println(totalCount);
+	 }
+	 
+	 //@Test
+	 public void testGetUserListByUserName() throws Exception{
+		 
+	 	Search search = new Search();
+	 	search.setCurrentPage(1);
+	 	search.setPageSize(3);
+	 	search.setSearchCondition("1");
+	 	search.setSearchKeyword("SCOTT");
+	 	Map<String,Object> map = userService.getUserList(search);
+	 	
+	 	List<Object> list = (List<Object>)map.get("list");
+	 	Assert.assertEquals(3, list.size());
+	 	
+		//==> console 확인
+	 	//System.out.println(list);
+	 	
+	 	Integer totalCount = (Integer)map.get("totalCount");
+	 	System.out.println(totalCount);
+	 	
+	 	System.out.println("=======================================");
+	 	
+	 	search.setSearchCondition("1");
+	 	search.setSearchKeyword(""+System.currentTimeMillis());
+	 	map = userService.getUserList(search);
+	 	
+	 	list = (List<Object>)map.get("list");
+	 	Assert.assertEquals(0, list.size());
+	 	
+		//==> console 확인
+	 	//System.out.println(list);
+	 	
+	 	totalCount = (Integer)map.get("totalCount");
+	 	System.out.println(totalCount);
+	 }	 
+}
